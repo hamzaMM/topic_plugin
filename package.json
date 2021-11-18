@@ -1,0 +1,12 @@
+{
+  "dependencies": {
+    "@aws-sdk/client-sagemaker": "^3.41.0",
+    "aws-sdk": "^2.1030.0",
+    "axios": "^0.24.0",
+    "react-accessible-accordion": "^4.0.0",
+    "webapp": "^0.0.2",
+    "webpack": "^5.33.2",
+    "webpack-cli": "^4.6.0",
+    "webpack-dev-server": "^4.5.0"
+  }
+}

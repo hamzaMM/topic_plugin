@@ -1,0 +1,4 @@
+../mattermost-server/bin/mmctl plugin delete be.controlaltdieliet.demoortom.first_mattermost_plugin
+make dist
+../mattermost-server/bin/mmctl plugin add ./dist/be.controlaltdieliet.demoortom.first_mattermost_plugin-0.1.0.tar.gz 
+../mattermost-server/bin/mmctl plugin enable be.controlaltdieliet.demoortom.first_mattermost_plugin
