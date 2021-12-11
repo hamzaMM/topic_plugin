@@ -1,131 +1,58 @@
-# Plugin Starter Template [![CircleCI branch](https://img.shields.io/circleci/project/github/mattermost/mattermost-plugin-starter-template/master.svg)](https://circleci.com/gh/mattermost/mattermost-plugin-starter-template)
+# Mattermost Topics filter Plugin (Beta)
 
-This plugin serves as a starting point for writing a Mattermost plugin. Feel free to base your own plugin off this repository.
+This plugin allows users to subscribe up to 10 distinct topics such as sports, programming, UIUX, etc, and get notification when a message of belonging to one of their subscribed topics is posted.
 
-To learn more about plugins, see [our plugin documentation](https://developers.mattermost.com/extend/plugins/).
+**Supported Mattermost Server Versions: 5.2+**
 
-## Getting Started
-Use GitHub's template feature to make a copy of this repository by clicking the "Use this template" button.
+## Plugin Marketplace
 
-Alternatively shallow clone the repository matching your plugin name:
-```
-git clone --depth 1 https://github.com/mattermost/mattermost-plugin-starter-template com.example.my-plugin
-```
+1. Go to **Main Menu -> Plugin Marketplace** in Mattermost.
+2. Search for "Topics" or manually find the plugin from the list and click **Install**
+3. Once the plugin has downloaded and been installed, click **Configure**.
 
-Note that this project uses [Go modules](https://github.com/golang/go/wiki/Modules). Be sure to locate the project outside of `$GOPATH`.
+## Setup with AWS Sagemaker
 
-Edit the following files:
-1. `plugin.json` with your `id`, `name`, and `description`:
-```
-{
-    "id": "com.example.my-plugin",
-    "name": "My Plugin",
-    "description": "A plugin to enhance Mattermost."
-}
-```
+1. Under Sagemaker console go to Notebook -> Notebook Instances and create a Jupyter instance
+2. Open the notebook instance and create a new 'conda_tensorflow2_p36' notebook
+3. Run the following script in a cell to load and deploy the model:
 
-2. `go.mod` with your Go module path, following the `<hosting-site>/<repository>/<module>` convention:
-```
-module github.com/example/my-plugin
-```
+```python
+import sagemaker
+sess = sagemaker.Session()
+role = sagemaker.get_execution_role()
 
-3. `.golangci.yml` with your Go module path:
-```yml
-linters-settings:
-  # [...]
-  goimports:
-    local-prefixes: github.com/example/my-plugin
-```
+from sagemaker.huggingface.model import HuggingFaceModel
 
-Build your plugin:
-```
-make
-```
-
-This will produce a single plugin file (with support for multiple architectures) for upload to your Mattermost server:
-
-```
-dist/com.example.my-plugin.tar.gz
-```
-
-## Development
-
-To avoid having to manually install your plugin, build and deploy your plugin using one of the following options.
-
-### Deploying with Local Mode
-
-If your Mattermost server is running locally, you can enable [local mode](https://docs.mattermost.com/administration/mmctl-cli-tool.html#local-mode) to streamline deploying your plugin. Edit your server configuration as follows:
-
-```json
-{
-    "ServiceSettings": {
-        ...
-        "EnableLocalMode": true,
-        "LocalModeSocketLocation": "/var/tmp/mattermost_local.socket"
-    }
-}
-```
-
-and then deploy your plugin:
-```
-make deploy
-```
-
-You may also customize the Unix socket path:
-```
-export MM_LOCALSOCKETPATH=/var/tmp/alternate_local.socket
-make deploy
-```
-
-If developing a plugin with a webapp, watch for changes and deploy those automatically:
-```
-export MM_SERVICESETTINGS_SITEURL=http://localhost:8065
-export MM_ADMIN_TOKEN=j44acwd8obn78cdcx7koid4jkr
-make watch
-```
-
-### Deploying with credentials
-
-Alternatively, you can authenticate with the server's API with credentials:
-```
-export MM_SERVICESETTINGS_SITEURL=http://localhost:8065
-export MM_ADMIN_USERNAME=admin
-export MM_ADMIN_PASSWORD=password
-make deploy
-```
-
-or with a [personal access token](https://docs.mattermost.com/developer/personal-access-tokens.html):
-```
-export MM_SERVICESETTINGS_SITEURL=http://localhost:8065
-export MM_ADMIN_TOKEN=j44acwd8obn78cdcx7koid4jkr
-make deploy
-```
-
-## Q&A
-
-### How do I make a server-only or web app-only plugin?
-
-Simply delete the `server` or `webapp` folders and remove the corresponding sections from `plugin.json`. The build scripts will skip the missing portions automatically.
-
-### How do I include assets in the plugin bundle?
-
-Place them into the `assets` directory. To use an asset at runtime, build the path to your asset and open as a regular file:
-
-```go
-bundlePath, err := p.API.GetBundlePath()
-if err != nil {
-    return errors.Wrap(err, "failed to get bundle path")
+#Hub Model configuration. <https://huggingface.co/models>
+hub = {
+  'HF_MODEL_ID':'facebook/bart-large-mnli', # model_id from hf.co/models
+  'HF_TASK':'text-classification' 
 }
 
-profileImage, err := ioutil.ReadFile(filepath.Join(bundlePath, "assets", "profile_image.png"))
-if err != nil {
-    return errors.Wrap(err, "failed to read profile image")
-}
+role = IAM role ARN
 
-if appErr := p.API.SetProfileImage(userID, profileImage); appErr != nil {
-    return errors.Wrap(err, "failed to set profile image")
-}
+#create Hugging Face Model Class
+huggingface_model = HuggingFaceModel(
+   env=hub, # configuration for loading model from Hub
+   role=role, # iam role with permissions to create an Endpoint
+   transformers_version="4.6", # transformers version used
+   tensorflow_version="2.4", # tensorflow version used
+   py_version='py37', # python version used
+)
+
+#deploy model to SageMaker Inference
+predictor = huggingface_model.deploy(
+   initial_instance_count=1,
+   instance_type="ml.t2.medium" #Change to any instance type
+   #Un comment to add elastic inference to speed up prediction latency
+   #accelerator_type='ml.eia2.medium',  
+)
+
 ```
 
-### How do I build the plugin with unminified JavaScript?
-Setting the `MM_DEBUG` environment variable will invoke the debug builds. The simplist way to do this is to simply include this variable in your calls to `make` (e.g. `make dist MM_DEBUG=1`).
+After the model is deployed, it will create a model, endpoint configuration, and endpoint which will serve the model.
+
+To use custom endpoint configuration create a endpoint using the sagemaker console, and add paramter endpoint_name with the deploy method.
+More information available here: https://sagemaker.readthedocs.io/en/stable/api/inference/model.html
+
+Once the endpoint is serving you may close and stop the notebook instance.
