@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -8,11 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/sagemakerruntime"
-
+	"github.com/mattermost/mattermost-server/v5/model"
 	"github.com/mattermost/mattermost-server/v5/plugin"
 )
 
@@ -26,92 +23,124 @@ type Plugin struct {
 
 	configurationLock sync.RWMutex
 }
-type Body struct {
-	Messages []string `json:"messages"`
-}
+
 type Output struct {
 	Sequence string    `json:"sequence"`
 	Labels   []string  `json:"labels"`
 	Scores   []float64 `json:"scores"`
 }
+type User struct {
+	User   string `json:"user"`
+	Labels string `json:"labels"`
+}
 
-func Predict(message string, candidates string) (string, float64) {
-	sess, err := session.NewSession(&aws.Config{
-		Region:      aws.String("us-east-2"),
-		Credentials: credentials.NewStaticCredentials("AKIA4H5E5ZK6CZIFSBEN", "iXx0GqU+O8MnupcB8aZaeuZRT6e7AC+pJwTC+77u", ""),
-	})
-	if err != nil {
-		fmt.Println(err)
-	}
+var kvList []string
 
-	svc := sagemakerruntime.New(sess)
-
+func (p *Plugin) Predict(message string, labels string) (string, float64) {
 	body := `{
-    "inputs": "%s",
-    "parameters": {
-        "candidate_labels": [%w]
-    }
-}`
+		"inputs": "%s",
+		"parameters": {
+			"candidate_labels": [%w],
+			"multi_label": "True"
+		}
+	}`
 	body = strings.Replace(body, "%s", message, 1)
-	body = strings.Replace(body, "%w", candidates, 1)
+	body = strings.Replace(body, "%w", labels, 1)
 
-	params := sagemakerruntime.InvokeEndpointInput{}
-	// params.SetAccept("application/json")
-	params.SetContentType("application/json")
-	params.SetBody([]byte(body))
-	params.SetEndpointName("huggingface-pytorch-inference-2021-11-02-19-38-58-852")
+	var jsonData = []byte(body)
 
-	req, out := svc.InvokeEndpointRequest(&params)
+	req, _ := http.NewRequest("POST", "https://api-inference.huggingface.co/models/facebook/bart-large-mnli", bytes.NewBuffer(jsonData))
+	req.Header.Set("Authorization", "Bearer api_xKgQCGwfjYCyYzeKkdxiZwhxpBwWNjYuaq")
+	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
 
-	if err := req.Send(); err != nil {
-		// process error
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
 		panic(err)
 	}
+	defer resp.Body.Close()
+
+	response, _ := ioutil.ReadAll(resp.Body)
 
 	var output Output
 
-	if err := json.Unmarshal(out.Body, &output); err != nil {
-		panic(err)
-	}
+	_ = json.Unmarshal(response, &output)
+	fmt.Println(output.Labels[0])
 
 	return output.Labels[0], output.Scores[0]
 }
 
+func (p *Plugin) FilterPost(post *model.Post, labels string, email string) (*model.Post, string) {
+	postMessageWithoutAccents := post.Message
+
+	words := strings.Fields(postMessageWithoutAccents)
+
+	postMessageWithoutAccents = strings.Join(words, " ")
+	label, score := p.Predict(postMessageWithoutAccents, labels)
+	fmt.Println("label: ")
+	fmt.Println(label)
+
+	// If class score more than 0.5 it belongs to the topic. This limit can be adjusted
+	if score > 0.5 {
+		message := label + ": " + post.Message
+		err := p.API.SendMail(email, "Topic Found", message)
+		if err != nil {
+			fmt.Print(err)
+		}
+	}
+
+	return nil, ""
+}
+
+func (p *Plugin) OnActive() error {
+	kvList, _ = p.API.KVList(0, 10000)
+	return nil
+}
+
+func (p *Plugin) MessageHasBeenPosted(_ *plugin.Context, post *model.Post) {
+	fmt.Println(kvList)
+	for _, id := range kvList {
+		user, err := p.API.GetUser(id)
+		if err != nil {
+			fmt.Println(err)
+		}
+		labels, _ := p.API.KVGet(id)
+		if post.UserId != user.Id {
+			p.FilterPost(post, string(labels), user.Email)
+		}
+	}
+}
+
 func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Request) {
+	fmt.Println(kvList)
 	w.Header().Set("Content-Type", "application/json")
-	switch r.Method {
-	case "GET":
-		_, errors := w.Write([]byte("Received a GET request\n"))
-		if errors != nil {
-			fmt.Println(errors)
-		}
-	case "POST":
+	switch r.URL.Path {
+	// gets topics user has subscribed too
+	case "/topics":
 		reqBody, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			fmt.Println(err)
+		}
+		kv, _ := p.API.KVGet(string(reqBody))
+		tempJSON, err := json.Marshal(string(kv))
+		if err != nil {
+			fmt.Println(err)
+		}
+		_, _ = w.Write(tempJSON)
+
+	// User has added or changed their topics
+	case "/add_topics":
+		reqBody, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			fmt.Println(err)
+		}
+		fmt.Println("received: ")
 		fmt.Println(string(reqBody))
-		if err != nil {
-			fmt.Println(err)
-		}
-		var messages Body
+		var user User
+		_ = json.Unmarshal(reqBody, &user)
+		fmt.Println(user.Labels)
+		_ = p.API.KVSet(user.User, []byte(user.Labels))
 
-		if errors := json.Unmarshal(reqBody, &messages); err != nil {
-			panic(errors)
-		}
-
-		topics := make(map[string][]string)
-		feilds := `"pets", "coding", "sports", "databases"`
-		for _, post := range messages.Messages {
-			label, score := Predict(post, feilds)
-			if score > 0.5 {
-				topics[label] = append(topics[label], post)
-			}
-		}
-		topicsJSON, err := json.Marshal(topics)
-		if err != nil {
-			fmt.Println(err)
-		}
-		_, err = w.Write(topicsJSON)
-		if err != nil {
-			fmt.Println(err)
-		}
+		kvList, _ = p.API.KVList(0, 10000)
 	}
 }

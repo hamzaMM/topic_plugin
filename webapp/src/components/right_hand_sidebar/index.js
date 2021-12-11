@@ -1,14 +1,14 @@
 import {connect} from 'react-redux';
 
-import {getCurrentTeam} from 'mattermost-redux/selectors/entities/teams';
+import {getCurrentUserId} from 'mattermost-redux/selectors/entities/users';
+import {getChannel} from 'mattermost-redux/selectors/entities/channels';
 import {getPostsInCurrentChannel} from 'mattermost-redux/selectors/entities/posts';
-import {getCurrentChannelId} from 'mattermost-redux/selectors/entities/common';
 
 import RHSView from './rhs_view';
 
 const mapStateToProps = (state) => ({
-    team: getCurrentTeam(state),
-    channel: getCurrentChannelId(state),
+    user: getCurrentUserId(state),
+    channel: getChannel(state, '7hwrm5ajdiy69mf3oue1cich6r'),
     posts: getPostsInCurrentChannel(state),
 });
 

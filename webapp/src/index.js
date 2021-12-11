@@ -4,13 +4,8 @@ import RightSideBar from './components/right_hand_sidebar';
 import MyFirstComponent from './components/my_first_component';
 
 const Icon = () => <i className='icon fa fa-plug'/>;
-class HelloWorldPlugin {
+class TopicsPlugin {
     initialize(registry, store) {
-        registry.registerMainMenuAction(
-            'Saying hi',
-            () => allert('Hi again'),
-        );
-
         registry.registerChannelHeaderButtonAction(
             <Icon/>,
             () => store.dispatch(toggleRHSPlugin),
@@ -24,5 +19,5 @@ class HelloWorldPlugin {
     }
 }
 
-window.registerPlugin('topic_modeling', new HelloWorldPlugin());
+window.registerPlugin('topic_modeling', new TopicsPlugin());
 

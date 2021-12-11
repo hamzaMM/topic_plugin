@@ -1,0 +1,10 @@
+.list-group-mine .list-group-item {
+  background-color: white;
+  border-top: 1px solid lightgrey;
+  border-left-color: lightgrey;
+  border-right-color: lightgrey;
+}
+
+.list-group-mine .list-group-item:hover {
+  background-color: #E15D44;
+}
